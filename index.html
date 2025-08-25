@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Multi-Sensor Counter Display</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #0f1720;
+      --accent: #2b9cff;
+      --warning: #ff4d4d;
+      --muted: #9aa6b2;
+      --glass: rgba(255,255,255,0.03);
+      --battery-bg: #1c2733;
+      --battery-fill: #2bf58f;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, system-ui, -apple-system, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg, #07101a 0%, var(--bg) 100%);
+      color: #e6eef6;
+      padding: 24px;
+    }
+
+    .wrap {
+      display: flex;
+      gap: 32px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .battery {
+      width: 60px;
+      height: 240px;
+      background: var(--battery-bg);
+      border-radius: 12px;
+      border: 2px solid var(--glass);
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .battery::after {
+      content: "";
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 24px;
+      height: 8px;
+      background: var(--battery-bg);
+      border-radius: 4px;
+    }
+
+    .battery-fill {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      background: var(--battery-fill);
+      transition: height 0.4s ease;
+    }
+
+    .weight-label {
+      font-size: 14px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .main-content {
+      flex: 1;
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .title h1 {
+      font-size: 22px;
+      margin: 0;
+    }
+
+    .title p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .dot.ok {
+      background: linear-gradient(180deg, #2bf58f, #00a64b);
+    }
+
+    .dot.off {
+      background: linear-gradient(180deg, #ff7b7b, #ff3b3b);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(200px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius: 14px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid rgba(255,255,255,0.02);
+      box-shadow: 0 6px 20px rgba(2,6,23,0.6);
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 15px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .counter {
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -1px;
+      color: var(--accent);
+      text-shadow: 0 6px 30px rgba(43, 156, 255, 0.08);
+      margin: 0;
+    }
+
+    .counter.warning {
+      color: var(--warning);
+      text-shadow: 0 0 20px rgba(255,77,77,0.5);
+    }
+
+    .meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .small-btn {
+      background: var(--glass);
+      border: 1px solid rgba(255,255,255,0.03);
+      padding: 6px 10px;
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.2s;
+    }
+
+    .small-btn:hover {
+      background: rgba(255,255,255,0.07);
+    }
+
+    .controls {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap" role="main">
+    <!-- Left Panel: Battery -->
+    <div class="left-panel">
+      <div class="battery">
+        <div id="battery-fill" class="battery-fill" style="height: 0%;"></div>
+      </div>
+      <div class="weight-label">
+        <div id="weight-value">-- kg</div>
+      </div>
+    </div>
+
+    <!-- Right Panel: Grid & Status -->
+    <div class="main-content">
+      <div class="top">
+        <div class="title">
+          <h1>Multi-Sensor Counter Display</h1>
+          <p>Realtime view of <code>/sensors/object_counterX/value</code> & weight</p>
+        </div>
+        <div class="status">
+          <div id="connDot" class="dot off" title="Disconnected"></div>
+          <div id="connText" style="font-size:13px;color:var(--muted)">Disconnected</div>
+        </div>
+      </div>
+      <div id="grid" class="grid"></div>
+    </div>
+  </div>
+
+  <script>
+    const databaseUrl = "https://vendopharma-1a71b-default-rtdb.asia-southeast1.firebasedatabase.app";
+    const pollInterval = 1000;
+
+    const connDot = document.getElementById('connDot');
+    const connText = document.getElementById('connText');
+    const grid = document.getElementById('grid');
+    const batteryFill = document.getElementById('battery-fill');
+    const weightText = document.getElementById('weight-value');
+
+    // Define sensors
+    const sensors = [1, 2, 3, 4, 5, 6].map(n => ({
+      type: 'counter',
+      id: n,
+      valuePath: `/sensors/object_counter${n}/value.json`,
+      logsPath: `/sensors/object_counter${n}/logs.json`,
+      lastValue: null,
+      el: null
+    }));
+
+    // Weight sensor added last
+    sensors.push({
+      type: 'weight',
+      id: 'W',
+      valuePath: `/weight/value.json`,
+      logsPath: null,
+      lastValue: null,
+      el: null
+    });
+
+    // Create cards for each sensor
+    function makeCard(sensor) {
+      const div = document.createElement('div');
+      div.className = "card";
+      div.innerHTML = `
+        <h2>${sensor.type === 'weight' ? 'Weight Sensor' : `Sensor ${sensor.id}`}</h2>
+        <h3 id="counter-${sensor.id}" class="counter">--</h3>
+        <div class="meta">
+          <div id="last-${sensor.id}">Last: —</div>
+          <div>•</div>
+          <div>Poll: ${pollInterval}ms</div>
+        </div>
+        ${sensor.type === 'counter' ? `
+        <div class="controls">
+          <button id="refresh-${sensor.id}" class="small-btn">Refresh</button>
+          <button id="copy-${sensor.id}" class="small-btn">Copy</button>
+          <button id="reset-${sensor.id}" class="small-btn" style="color:#ff5555">Reset</button>
+        </div>` : ''}
+      `;
+      grid.appendChild(div);
+
+      sensor.el = {
+        counter: div.querySelector(`#counter-${sensor.id}`),
+        last: div.querySelector(`#last-${sensor.id}`),
+        refreshBtn: sensor.type === 'counter' ? div.querySelector(`#refresh-${sensor.id}`) : null,
+        copyBtn: sensor.type === 'counter' ? div.querySelector(`#copy-${sensor.id}`) : null,
+        resetBtn: sensor.type === 'counter' ? div.querySelector(`#reset-${sensor.id}`) : null,
+      };
+
+      // Event listeners for counter buttons
+      if (sensor.type === 'counter') {
+        sensor.el.refreshBtn.addEventListener('click', () => fetchSensorData(sensor));
+        sensor.el.copyBtn.addEventListener('click', () => {
+          if (sensor.lastValue !== null) {
+            navigator.clipboard.writeText(sensor.lastValue.toString());
+            alert(`Copied value ${sensor.lastValue} from Sensor ${sensor.id}`);
+          }
+        });
+        sensor.el.resetBtn.addEventListener('click', () => resetSensorValue(sensor));
+      }
+    }
+
+    // Initialize cards
+    sensors.forEach(makeCard);
+
+    // Fetch sensor data from Firebase
+    async function fetchSensorData(sensor) {
+      try {
+        const response = await fetch(databaseUrl + sensor.valuePath);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const data = await response.json();
+
+        // Update lastValue
+        sensor.lastValue = data;
+
+        // Update UI
+        if (sensor.el && sensor.el.counter) {
+          if (sensor.type === 'weight') {
+            sensor.el.counter.textContent = data.toFixed(2);
+            weightText.textContent = `${data.toFixed(2)} kg`;
+            updateBattery(data);
+          } else {
+            sensor.el.counter.textContent = data;
+            if (data > 1000) {
+              sensor.el.counter.classList.add('warning');
+            } else {
+              sensor.el.counter.classList.remove('warning');
+            }
+          }
+        }
+
+        if (sensor.el && sensor.el.last) {
+          sensor.el.last.textContent = `Last: ${new Date().toLocaleTimeString()}`;
+        }
+
+        setConnectionStatus(true);
+      } catch (error) {
+        console.error(`Error fetching sensor ${sensor.id} data:`, error);
+        setConnectionStatus(false);
+      }
+    }
+
+    // Reset counter sensor value to 10 in Firebase
+    async function resetSensorValue(sensor) {
+      if (sensor.type !== 'counter') return;
+      if (!confirm(`Reset Sensor ${sensor.id} value to 10?`)) return;
+      try {
+        const resetResponse = await fetch(databaseUrl + sensor.valuePath, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(10)
+        });
+        if (!resetResponse.ok) throw new Error(`HTTP error! status: ${resetResponse.status}`);
+
+        sensor.lastValue = 10;
+        // Update UI immediately
+        sensor.el.counter.textContent = 10;
+        sensor.el.counter.classList.remove('warning');
+        sensor.el.last.textContent = `Last: ${new Date().toLocaleTimeString()}`;
+      } catch (error) {
+        alert('Failed to reset value: ' + error.message);
+      }
+    }
+
+    // Update battery fill based on weight (assume weight max 10)
+    function updateBattery(weight) {
+      let percent = Math.min(Math.max(weight * 10, 0), 100);
+      batteryFill.style.height = `${percent}%`;
+    }
+
+    // Connection status
+    let connected = false;
+    function setConnectionStatus(status) {
+      connected = status;
+      if (status) {
+        connDot.classList.remove('off');
+        connDot.classList.add('ok');
+        connDot.title = 'Connected';
+        connText.textContent = 'Connected';
+      } else {
+        connDot.classList.remove('ok');
+        connDot.classList.add('off');
+        connDot.title = 'Disconnected';
+        connText.textContent = 'Disconnected';
+      }
+    }
+
+    // Countdown logic for weight sensor (10 to 0)
+    function countdownWeightSensor() {
+      const weightSensor = sensors.find(s => s.type === 'weight');
+      if (!weightSensor) return;
+
+      if (weightSensor.lastValue === null) {
+        // Initialize to 10 if no value yet
+        weightSensor.lastValue = 10;
+      } else if (weightSensor.lastValue > 0) {
+        weightSensor.lastValue = Math.max(0, weightSensor.lastValue - 1);
+      }
+      // Update Firebase weight value to new lastValue
+      fetch(databaseUrl + weightSensor.valuePath, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(weightSensor.lastValue)
+      }).catch(e => console.error('Failed to update weight in Firebase:', e));
+
+      // Update UI
+      if (weightSensor.el && weightSensor.el.counter) {
+        weightSensor.el.counter.textContent = weightSensor.lastValue.toFixed(0);
+        weightText.textContent = `${weightSensor.lastValue.toFixed(0)} kg`;
+        updateBattery(weightSensor.lastValue);
+        weightSensor.el.last.textContent = `Last: ${new Date().toLocaleTimeString()}`;
+      }
+    }
+
+    // Initial data fetch for all sensors
+    async function fetchAll() {
+      await Promise.all(sensors.map(fetchSensorData));
+    }
+
+    // Initial fetch
+    fetchAll();
+
+    // Poll counter sensors every pollInterval ms
+    setInterval(() => {
+      sensors.forEach(sensor => {
+        if (sensor.type === 'counter') {
+          fetchSensorData(sensor);
+        }
+      });
+    }, pollInterval);
+
+    // Countdown weight sensor every 5 seconds (to slow down countdown)
+    setInterval(() => {
+      countdownWeightSensor();
+    }, 5000);
+
+  </script>
+</body>
+</html>
