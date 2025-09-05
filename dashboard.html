@@ -170,17 +170,33 @@
       background: rgba(255,255,255,0.07);
     }
 
+    /* MOBILE LAYOUT REORDER */
     @media (max-width: 768px) {
       .wrap {
-        flex-direction: column-reverse;
+        flex-direction: column;
         align-items: center;
         padding: 16px;
       }
 
+      /* Reorder the three main blocks */
+      .main-content {
+        order: 1; /* Sensor grid first */
+        width: 100%;
+      }
+
       .left-panel {
+        order: 2; /* Battery/weight second */
         flex-direction: row;
         gap: 16px;
         justify-content: center;
+        margin: 20px 0;
+        width: 100%;
+      }
+
+      #sales-summary-container {
+        order: 3; /* Sales summary last */
+        width: 100%;
+        max-width: 600px;
         margin-top: 20px;
       }
 
@@ -218,35 +234,42 @@
       </div>
 
       <div id="grid" class="grid"></div>
+    </div>
 
-      <hr style="margin-top:30px; border-color: #333;">
-      <div>
-        <div style="display: flex; justify-content: space-between; align-items: center; max-width:600px;">
-          <h2 style="font-size:18px;color:var(--muted)">🛒 Sales Summary</h2>
+    <div id="sales-summary-container">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <h2 style="font-size:18px;color:var(--muted)">🛒 Sales Summary</h2>
+        <div>
           <button id="reset-btn" class="small-btn">Reset Sales</button>
+          <button id="pdf-btn" class="small-btn">Create PDF</button>
         </div>
-        <table style="width:100%; max-width:600px; font-size:14px; border-collapse: collapse;">
-          <thead>
-            <tr style="color:#9aa6b2">
-              <th align="left">Product</th>
-              <th>Qty</th>
-              <th>Price</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody id="sales-body"></tbody>
-          <tfoot>
-            <tr style="font-weight:bold; color: var(--accent)">
-              <td colspan="3" align="right">Total Sales:</td>
-              <td id="total-sales">₱0</td>
-            </tr>
-          </tfoot>
-        </table>
       </div>
+      <table style="width:100%; font-size:14px; border-collapse: collapse;">
+        <thead>
+          <tr style="color:#9aa6b2">
+            <th align="left">Product</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody id="sales-body"></tbody>
+        <tfoot>
+          <tr style="font-weight:bold; color: var(--accent)">
+            <td colspan="3" align="right">Total Sales:</td>
+            <td id="total-sales">₱0</td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   </div>
 
+  <!-- jsPDF CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
   <script>
+    const { jsPDF } = window.jspdf;
+
     const databaseUrl = "https://vendopharma-1a71b-default-rtdb.asia-southeast1.firebasedatabase.app";
     const pollInterval = 1000;
 
@@ -258,6 +281,7 @@
     const salesBody = document.getElementById('sales-body');
     const totalSalesEl = document.getElementById('total-sales');
     const resetBtn = document.getElementById('reset-btn');
+    const pdfBtn = document.getElementById('pdf-btn');
 
     const productMap = {
       1: { name: "Paracetamol", price: 2 },
@@ -363,6 +387,38 @@
       }
     });
 
+    pdfBtn.addEventListener('click', () => {
+      const doc = new jsPDF();
+
+      doc.setFontSize(18);
+      doc.text("Sales Summary", 14, 22);
+
+      // Prepare data for autoTable plugin
+      const rows = [];
+      for (const [name, { qty, total }] of Object.entries(sales)) {
+        rows.push([name, qty.toString(), `₱${(total / qty).toFixed(2)}`, `₱${total.toFixed(2)}`]);
+      }
+
+      // If no sales, just show message
+      if (rows.length === 0) {
+        doc.setFontSize(14);
+        doc.text("No sales data available.", 14, 40);
+      } else {
+        // Use autoTable plugin (loaded via CDN in jsPDF bundle)
+        doc.autoTable({
+          head: [['Product', 'Qty', 'Price', 'Total']],
+          body: rows,
+          startY: 30,
+          styles: { fontSize: 12 },
+          headStyles: { fillColor: [43, 156, 255] },
+          foot: [['', '', 'Total Sales:', `₱${totalSales.toFixed(2)}`]],
+          footStyles: { fillColor: [43, 156, 255], fontStyle: 'bold' },
+        });
+      }
+
+      doc.save("sales_summary.pdf");
+    });
+
     async function fetchSensorData(sensor) {
       try {
         const response = await fetch(databaseUrl + sensor.valuePath);
@@ -399,5 +455,8 @@
     fetchAll();
     setInterval(fetchAll, pollInterval);
   </script>
+
+  <!-- jsPDF AutoTable plugin CDN for table support -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
 </body>
 </html>
