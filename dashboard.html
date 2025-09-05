@@ -156,14 +156,6 @@
       color: var(--muted);
     }
 
-    .controls {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-
     .small-btn {
       background: var(--glass);
       border: 1px solid rgba(255,255,255,0.03);
@@ -178,7 +170,6 @@
       background: rgba(255,255,255,0.07);
     }
 
-    /* 🔁 Responsive styling for mobile */
     @media (max-width: 768px) {
       .wrap {
         flex-direction: column-reverse;
@@ -230,7 +221,10 @@
 
       <hr style="margin-top:30px; border-color: #333;">
       <div>
-        <h2 style="font-size:18px;color:var(--muted)">🛒 Sales Summary</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; max-width:600px;">
+          <h2 style="font-size:18px;color:var(--muted)">🛒 Sales Summary</h2>
+          <button id="reset-btn" class="small-btn">Reset Sales</button>
+        </div>
         <table style="width:100%; max-width:600px; font-size:14px; border-collapse: collapse;">
           <thead>
             <tr style="color:#9aa6b2">
@@ -263,9 +257,7 @@
     const weightText = document.getElementById('weight-value');
     const salesBody = document.getElementById('sales-body');
     const totalSalesEl = document.getElementById('total-sales');
-
-    const sales = {};
-    let totalSales = 0;
+    const resetBtn = document.getElementById('reset-btn');
 
     const productMap = {
       1: { name: "Paracetamol", price: 2 },
@@ -275,6 +267,9 @@
       5: { name: "Salbutamol", price: 14 },
       6: { name: "Loperamide", price: 1 }
     };
+
+    let sales = JSON.parse(localStorage.getItem('salesData')) || {};
+    let totalSales = parseFloat(localStorage.getItem('totalSales')) || 0;
 
     const sensors = Object.keys(productMap).map(id => ({
       type: 'counter',
@@ -330,6 +325,7 @@
       sales[name].qty += qty;
       sales[name].total += qty * price;
       totalSales += qty * price;
+      saveSales();
       renderSales();
     }
 
@@ -347,6 +343,25 @@
       }
       totalSalesEl.textContent = `₱${totalSales.toFixed(2)}`;
     }
+
+    function saveSales() {
+      localStorage.setItem('salesData', JSON.stringify(sales));
+      localStorage.setItem('totalSales', totalSales.toString());
+    }
+
+    function resetSales() {
+      sales = {};
+      totalSales = 0;
+      localStorage.removeItem('salesData');
+      localStorage.removeItem('totalSales');
+      renderSales();
+    }
+
+    resetBtn.addEventListener('click', () => {
+      if (confirm('Are you sure you want to reset all sales data?')) {
+        resetSales();
+      }
+    });
 
     async function fetchSensorData(sensor) {
       try {
@@ -380,6 +395,7 @@
       await Promise.all(sensors.map(fetchSensorData));
     }
 
+    renderSales();
     fetchAll();
     setInterval(fetchAll, pollInterval);
   </script>
