@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multi-Sensor Counter Display</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #0f1720;
+      --accent: #2b9cff;
+      --warning: #ff4d4d;
+      --muted: #9aa6b2;
+      --glass: rgba(255,255,255,0.03);
+      --battery-bg: #1c2733;
+      --battery-fill: #2bf58f;
+    }
+    html, body {
+      margin: 0; padding: 24px;
+      background: linear-gradient(180deg, #07101a 0%, var(--bg) 100%);
+      font-family: Inter, sans-serif;
+      color: #e6eef6;
+      box-sizing: border-box;
+    }
+    .wrap { display: flex; flex-wrap: wrap; gap: 32px; max-width: 1200px; margin: auto; }
+    .left-panel { display: flex; flex-direction: column; align-items: center; }
+    .battery { width: 60px; height: 240px; background: var(--battery-bg); border-radius: 12px; border: 2px solid var(--glass); position: relative; overflow: hidden; margin-bottom: 10px; }
+    .battery::after { content: ""; position: absolute; top: -12px; left: 50%; transform: translateX(-50%); width: 24px; height: 8px; background: var(--battery-bg); border-radius: 4px; }
+    .battery-fill { position: absolute; bottom: 0; width: 100%; background: var(--battery-fill); transition: height 0.4s ease; }
+    .weight-label { font-size: 14px; color: var(--muted); text-align: center; }
+    .main-content { flex: 1; }
+    .top { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    .title h1 { font-size: 22px; margin: 0; }
+    .title p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .status { display: flex; align-items: center; gap: 10px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot.ok { background: linear-gradient(180deg, #2bf58f, #00a64b); }
+    .dot.off { background: linear-gradient(180deg, #ff7b7b, #ff3b3b); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; }
+    .card { background: var(--glass); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; align-items: center; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 6px 20px rgba(2,6,23,0.6); }
+    .card h2 { margin: 0; font-size: 15px; color: var(--muted); }
+    .counter { font-size: 48px; font-weight: 700; color: var(--accent); }
+    .counter.warning { color: var(--warning); }
+    .meta { font-size: 12px; color: var(--muted); }
+    .controls { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+    .small-btn { background: var(--glass); border: 1px solid rgba(255,255,255,0.03); padding: 6px 10px; border-radius: 8px; color: var(--muted); font-size: 12px; cursor: pointer; }
+    .small-btn:hover { background: rgba(255,255,255,0.07); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="left-panel">
+      <div class="battery"><div id="battery-fill" class="battery-fill" style="height:0%"></div></div>
+      <div class="weight-label"><div id="weight-value">-- kg</div></div>
+    </div>
+    <div class="main-content">
+      <div class="top">
+        <div class="title">
+          <h1>Multi-Sensor Counter Display</h1>
+          <p>Live tracking of product sales and weight</p>
+        </div>
+        <div class="status">
+          <div id="connDot" class="dot off"></div>
+          <div id="connText" style="font-size:13px;color:var(--muted)">Disconnected</div>
+        </div>
+      </div>
+      <div id="grid" class="grid"></div>
+
+      <hr style="margin-top:30px; border-color: #333;">
+      <div>
+        <h2 style="font-size:18px;color:var(--muted)">🛒 Sales Summary</h2>
+        <table style="width:100%; max-width:600px; font-size:14px; border-collapse: collapse;">
+          <thead>
+            <tr style="color:#9aa6b2">
+              <th align="left">Product</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="sales-body"></tbody>
+          <tfoot>
+            <tr style="font-weight:bold; color: var(--accent)">
+              <td colspan="3" align="right">Total Sales:</td>
+              <td id="total-sales">₱0</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const databaseUrl = "https://vendopharma-1a71b-default-rtdb.asia-southeast1.firebasedatabase.app";
+    const pollInterval = 1000;
+
+    const connDot = document.getElementById('connDot');
+    const connText = document.getElementById('connText');
+    const grid = document.getElementById('grid');
+    const batteryFill = document.getElementById('battery-fill');
+    const weightText = document.getElementById('weight-value');
+    const salesBody = document.getElementById('sales-body');
+    const totalSalesEl = document.getElementById('total-sales');
+
+    const sales = {};
+    let totalSales = 0;
+
+    const productMap = {
+      1: { name: "Paracetamol", price: 2 },
+      2: { name: "Cetirizine", price: 3 },
+      3: { name: "Multivitamins + Minerals (500s)", price: 8 },
+      4: { name: "Ferrous Sulfate 325mg", price: 1 },
+      5: { name: "Salbutamol", price: 14 },
+      6: { name: "Loperamide", price: 1 }
+    };
+
+    const sensors = Object.keys(productMap).map(id => ({
+      type: 'counter',
+      id: Number(id),
+      name: productMap[id].name,
+      price: productMap[id].price,
+      valuePath: `/sensors/object_counter${id}/value.json`,
+      lastValue: null,
+      el: null
+    }));
+
+    sensors.push({
+      type: 'weight',
+      id: 'W',
+      name: 'Weight Sensor',
+      valuePath: `/weight/value.json`,
+      lastValue: null,
+      el: null
+    });
+
+    function makeCard(sensor) {
+      const div = document.createElement('div');
+      div.className = "card";
+      div.innerHTML = `
+        <h2>${sensor.name}${sensor.price ? ` — ₱${sensor.price}` : ''}</h2>
+        <h3 id="counter-${sensor.id}" class="counter">--</h3>
+        <div class="meta" id="last-${sensor.id}">Last: —</div>
+      `;
+      grid.appendChild(div);
+      sensor.el = {
+        counter: div.querySelector(`#counter-${sensor.id}`),
+        last: div.querySelector(`#last-${sensor.id}`)
+      };
+    }
+
+    sensors.forEach(makeCard);
+
+    function setConnectionStatus(status) {
+      connDot.classList.toggle('ok', status);
+      connDot.classList.toggle('off', !status);
+      connText.textContent = status ? 'Connected' : 'Disconnected';
+    }
+
+    function updateBattery(weight) {
+      const percent = Math.min(Math.max(weight * 10, 0), 100);
+      batteryFill.style.height = `${percent}%`;
+    }
+
+    function recordSale(name, price, qty) {
+      if (!sales[name]) {
+        sales[name] = { qty: 0, total: 0 };
+      }
+      sales[name].qty += qty;
+      sales[name].total += qty * price;
+      totalSales += qty * price;
+      renderSales();
+    }
+
+    function renderSales() {
+      salesBody.innerHTML = '';
+      for (const [name, { qty, total }] of Object.entries(sales)) {
+        salesBody.innerHTML += `
+          <tr>
+            <td>${name}</td>
+            <td align="center">${qty}</td>
+            <td align="center">₱${(total / qty).toFixed(2)}</td>
+            <td align="center">₱${total.toFixed(2)}</td>
+          </tr>
+        `;
+      }
+      totalSalesEl.textContent = `₱${totalSales.toFixed(2)}`;
+    }
+
+    async function fetchSensorData(sensor) {
+      try {
+        const response = await fetch(databaseUrl + sensor.valuePath);
+        if (!response.ok) throw new Error();
+
+        const data = await response.json();
+        const prev = sensor.lastValue ?? data;
+        sensor.lastValue = data;
+
+        if (sensor.type === 'weight') {
+          sensor.el.counter.textContent = data.toFixed(2);
+          weightText.textContent = `${data.toFixed(2)} kg`;
+          updateBattery(data);
+        } else {
+          sensor.el.counter.textContent = data;
+          if (data < prev) {
+            const sold = prev - data;
+            recordSale(sensor.name, sensor.price, sold);
+          }
+        }
+
+        sensor.el.last.textContent = `Last: ${new Date().toLocaleTimeString()}`;
+        setConnectionStatus(true);
+      } catch {
+        setConnectionStatus(false);
+      }
+    }
+
+    async function fetchAll() {
+      await Promise.all(sensors.map(fetchSensorData));
+    }
+
+    fetchAll();
+    setInterval(fetchAll, pollInterval);
+  </script>
+</body>
+</html>
